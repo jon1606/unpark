@@ -7,7 +7,7 @@ import InstallPrompt from '@/components/InstallPrompt';
 const Map = dynamic(() => import('@/components/Map'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex items-center justify-center bg-zinc-800">
+    <div style={{ width: '100%', height: '100dvh' }} className="flex items-center justify-center bg-zinc-800">
       <div className="text-zinc-400 text-sm">Loading map...</div>
     </div>
   ),
@@ -17,7 +17,7 @@ export default function HomePage() {
   const { position } = useGeolocation(true);
 
   return (
-    <main className="relative w-full h-screen">
+    <main style={{ position: 'relative', width: '100%', height: '100dvh', overflow: 'hidden' }}>
       <Map userLat={position?.lat ?? null} userLng={position?.lng ?? null} />
       <InstallPrompt />
       <NavBar />
