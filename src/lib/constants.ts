@@ -1,0 +1,6 @@
+export const SPOT_EXPIRY_MINUTES = 15;
+export const PARKING_SPEED_THRESHOLD_MPH = 2;
+export const UNPARK_SPEED_THRESHOLD_MPH = 5;
+export const STOPPED_DURATION_BEFORE_PARK_MS = 30_000;
+export const MAP_DEFAULT_ZOOM = 15;
+export const NEARBY_RADIUS_METERS = 500;
