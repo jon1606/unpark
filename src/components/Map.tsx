@@ -6,7 +6,6 @@ import 'leaflet/dist/leaflet.css';
 import { useParkingSpots } from '@/hooks/useParkingSpots';
 import { MAP_DEFAULT_ZOOM } from '@/lib/constants';
 
-// Fix default marker icons in Next.js
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -14,13 +13,23 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-const spotIcon = L.divIcon({
+// Blue P = available spot
+const availableIcon = L.divIcon({
   html: `<div style="background:#3b82f6;color:white;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:bold;border:3px solid white;box-shadow:0 2px 12px rgba(59,130,246,0.6)">P</div>`,
   className: '',
   iconSize: [36, 36],
   iconAnchor: [18, 18],
 });
 
+// Grey car = occupied spot (someone parked here)
+const occupiedIcon = L.divIcon({
+  html: `<div style="background:#52525b;color:#d4d4d8;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid #71717a;box-shadow:0 2px 8px rgba(0,0,0,0.4)">🚗</div>`,
+  className: '',
+  iconSize: [34, 34],
+  iconAnchor: [17, 17],
+});
+
+// Blue dot = my location
 const userIcon = L.divIcon({
   html: `<div style="width:16px;height:16px;border-radius:50%;background:#3b82f6;border:3px solid white;box-shadow:0 0 0 4px rgba(59,130,246,0.3)"></div>`,
   className: '',
@@ -28,7 +37,6 @@ const userIcon = L.divIcon({
   iconAnchor: [8, 8],
 });
 
-// Only recenters once on first valid position
 function InitialCenter({ lat, lng }: { lat: number; lng: number }) {
   const map = useMap();
   const doneRef = useRef(false);
@@ -47,9 +55,13 @@ interface MapProps {
 }
 
 export default function Map({ userLat, userLng }: MapProps) {
-  const { spots } = useParkingSpots(userLat, userLng);
+  const { spots, occupiedSpots } = useParkingSpots();
   const defaultLat = userLat ?? 40.7484;
   const defaultLng = userLng ?? -73.9857;
+
+  const availableCount = spots.length;
+  const occupiedCount = occupiedSpots.length;
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100dvh' }}>
       <MapContainer
@@ -63,51 +75,60 @@ export default function Map({ userLat, userLng }: MapProps) {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/* Recenter once on first user position */}
         {userLat && userLng && <InitialCenter lat={userLat} lng={userLng} />}
 
-        {/* User location dot */}
+        {/* My location */}
         {userLat && userLng && (
           <Marker position={[userLat, userLng]} icon={userIcon} />
         )}
 
-        {/* Parking spot markers */}
+        {/* Available spots (blue P) */}
         {spots.map((spot) => {
           const minutesLeft = Math.max(
             0,
             Math.round((new Date(spot.expires_at).getTime() - Date.now()) / 60000)
           );
-          const isMock = spot.id.startsWith('mock-');
           return (
-            <Marker
-              key={spot.id}
-              position={[spot.lat, spot.lng]}
-              icon={spotIcon}
-            >
+            <Marker key={spot.id} position={[spot.lat, spot.lng]} icon={availableIcon}>
               <Popup>
-                <div style={{ textAlign: 'center', minWidth: '140px' }}>
-                  <p style={{ fontWeight: 'bold', marginBottom: '4px' }}>
-                    {isMock ? '🅿 Demo spot' : '🅿 Spot available'}
-                  </p>
-                  <p style={{ color: '#6b7280', fontSize: '13px' }}>
-                    Expires in ~{minutesLeft}m
-                  </p>
+                <div style={{ textAlign: 'center', minWidth: '130px' }}>
+                  <p style={{ fontWeight: 'bold', marginBottom: '4px' }}>🅿 Spot available</p>
+                  <p style={{ color: '#6b7280', fontSize: '13px' }}>Expires in ~{minutesLeft}m</p>
                 </div>
               </Popup>
             </Marker>
           );
         })}
+
+        {/* Occupied spots (grey car) */}
+        {occupiedSpots.map((session) => (
+          <Marker
+            key={session.user_id}
+            position={[session.lat, session.lng]}
+            icon={occupiedIcon}
+          >
+            <Popup>
+              <div style={{ textAlign: 'center', minWidth: '130px' }}>
+                <p style={{ fontWeight: 'bold', marginBottom: '4px' }}>🚗 Spot taken</p>
+                <p style={{ color: '#6b7280', fontSize: '13px' }}>Someone is parked here</p>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
       </MapContainer>
 
-      {/* Spot count badge */}
-      {spots.length > 0 && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-white text-zinc-800 font-semibold text-sm px-4 py-2 rounded-full shadow-lg border border-zinc-200 pointer-events-none">
-          {spots.length} spot{spots.length !== 1 ? 's' : ''} available nearby
+      {/* Legend badge */}
+      {(availableCount > 0 || occupiedCount > 0) && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-white text-zinc-800 text-sm px-4 py-2 rounded-full shadow-lg border border-zinc-200 pointer-events-none flex items-center gap-3">
+          {availableCount > 0 && (
+            <span><span className="font-bold text-blue-500">{availableCount}</span> free</span>
+          )}
+          {availableCount > 0 && occupiedCount > 0 && <span className="text-zinc-300">·</span>}
+          {occupiedCount > 0 && (
+            <span><span className="font-bold text-zinc-500">{occupiedCount}</span> taken</span>
+          )}
         </div>
       )}
-
-      {/* Bottom nav safe area */}
-      <div className="absolute bottom-0 left-0 right-0 h-16 z-[999] pointer-events-none" />
     </div>
   );
 }

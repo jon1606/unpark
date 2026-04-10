@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { useMotionDetector } from '@/hooks/useMotionDetector';
+import { useActiveSession } from '@/hooks/useActiveSession';
 import NavBar from '@/components/NavBar';
 import { Navigation, Car, MapPin, X } from 'lucide-react';
 import type { TrackingState } from '@/types';
@@ -40,9 +41,10 @@ export default function TrackPage() {
   const [hasPermission, setHasPermission] = useState(false);
   const [sharedCount, setSharedCount] = useState(0);
   const { position, error } = useGeolocation(isTracking);
-  const { trackingState, setTrackingState, onUnparkedRef } = useMotionDetector(
+  const { trackingState, setTrackingState, onUnparkedRef, onPositionRef } = useMotionDetector(
     isTracking ? position : null
   );
+  const { reportPosition } = useActiveSession(isTracking);
   const prevTrackingState = useRef(trackingState);
 
   // Auto-start if permission was previously granted
@@ -61,6 +63,13 @@ export default function TrackPage() {
     }
     prevTrackingState.current = trackingState;
   }, [trackingState]);
+
+  // Broadcast live position to active_sessions
+  useEffect(() => {
+    onPositionRef.current = (lat, lng, isParked) => {
+      reportPosition(lat, lng, isParked);
+    };
+  }, [onPositionRef, reportPosition]);
 
   // Wire unpark event to API
   useEffect(() => {

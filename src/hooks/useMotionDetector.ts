@@ -1,11 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { GPSPosition, TrackingState } from '@/types';
-import {
-  PARKING_SPEED_THRESHOLD_MPH,
-  UNPARK_SPEED_THRESHOLD_MPH,
-  STOPPED_DURATION_BEFORE_PARK_MS,
-} from '@/lib/constants';
+import { UNPARK_SPEED_THRESHOLD_MPH } from '@/lib/constants';
 
 const MS_TO_MPH = 2.237;
 
@@ -21,42 +17,37 @@ function haversineMeters(a: GPSPosition, b: GPSPosition): number {
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
+function getSpeedMph(position: GPSPosition, prev: GPSPosition | null): number {
+  if (position.speed !== null && position.speed !== undefined) {
+    return position.speed * MS_TO_MPH;
+  }
+  if (prev) {
+    const dist = haversineMeters(prev, position);
+    const dtSeconds = (position.timestamp - prev.timestamp) / 1000;
+    return dtSeconds > 0 ? (dist / dtSeconds) * MS_TO_MPH : 0;
+  }
+  return 0;
+}
+
 export function useMotionDetector(position: GPSPosition | null) {
   const [trackingState, setTrackingState] = useState<TrackingState>('idle');
   const prevPositionRef = useRef<GPSPosition | null>(null);
-  const stoppedSinceRef = useRef<number | null>(null);
   const parkedLocationRef = useRef<{ lat: number; lng: number } | null>(null);
   const onUnparkedRef = useRef<((lat: number, lng: number) => void) | null>(null);
+  // Called on every position update with current speed and parked state
+  const onPositionRef = useRef<((lat: number, lng: number, isParked: boolean) => void) | null>(null);
 
   useEffect(() => {
     if (!position) return;
 
-    let speedMph: number;
-    if (position.speed !== null && position.speed !== undefined) {
-      speedMph = position.speed * MS_TO_MPH;
-    } else if (prevPositionRef.current) {
-      const dist = haversineMeters(prevPositionRef.current, position);
-      const dtSeconds = (position.timestamp - prevPositionRef.current.timestamp) / 1000;
-      speedMph = dtSeconds > 0 ? (dist / dtSeconds) * MS_TO_MPH : 0;
-    } else {
-      prevPositionRef.current = position;
-      return;
-    }
-
-    const isStopped = speedMph < PARKING_SPEED_THRESHOLD_MPH;
+    const speedMph = getSpeedMph(position, prevPositionRef.current);
     const isMoving = speedMph > UNPARK_SPEED_THRESHOLD_MPH;
+    // Speed = 0 means parked immediately
+    const isStopped = speedMph === 0;
 
-    if (isStopped) {
-      if (stoppedSinceRef.current === null) {
-        stoppedSinceRef.current = position.timestamp;
-      }
-      const stoppedDuration = position.timestamp - stoppedSinceRef.current;
-      if (stoppedDuration >= STOPPED_DURATION_BEFORE_PARK_MS && trackingState !== 'parked') {
-        setTrackingState('parked');
-        parkedLocationRef.current = { lat: position.lat, lng: position.lng };
-      }
-    } else {
-      stoppedSinceRef.current = null;
+    if (isStopped && trackingState !== 'parked') {
+      setTrackingState('parked');
+      parkedLocationRef.current = { lat: position.lat, lng: position.lng };
     }
 
     if (isMoving && trackingState === 'parked' && parkedLocationRef.current) {
@@ -65,8 +56,21 @@ export function useMotionDetector(position: GPSPosition | null) {
       parkedLocationRef.current = null;
     }
 
+    if (!isStopped && !isMoving && trackingState === 'parked') {
+      // Slow movement (e.g. 2-5 mph) — still treat as moving away from parked
+      setTrackingState('tracking');
+      if (parkedLocationRef.current) {
+        onUnparkedRef.current?.(parkedLocationRef.current.lat, parkedLocationRef.current.lng);
+        parkedLocationRef.current = null;
+      }
+    }
+
+    // Broadcast live position
+    const parked = isStopped || trackingState === 'parked';
+    onPositionRef.current?.(position.lat, position.lng, parked);
+
     prevPositionRef.current = position;
   }, [position, trackingState]);
 
-  return { trackingState, setTrackingState, onUnparkedRef };
+  return { trackingState, setTrackingState, onUnparkedRef, onPositionRef };
 }
